@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # coding: utf-8
-# Copyright 2016 Abram Hindle, https://github.com/tywtyw2002, and https://github.com/treedust
+# Copyright 2023 Abram Hindle, Courtenay Laing-Kobe, https://github.com/tywtyw2002, and https://github.com/treedust
 # 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -33,7 +33,14 @@ class HTTPResponse(object):
         self.body = body
 
 class HTTPClient(object):
-    #def get_host_port(self,url):
+    def get_host_port(self,url):
+        parse = urllib.parse.urlparse(url)
+        test = parse.netloc.split(":")
+        if len(test) > 1:
+            return (test[0], int(test[1]))
+        data = socket.getaddrinfo(parse.netloc, 80)
+        (host, port) = data[-1][-1]
+        return (host, port)
 
     def connect(self, host, port):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -43,11 +50,25 @@ class HTTPClient(object):
     def get_code(self, data):
         return None
 
-    def get_headers(self,data):
-        return None
+    def get_headers(self, command, url, args=None):
+        parse = urllib.parse.urlparse(url)
+        hostname = parse.netloc
+        path = parse.path
+        end = "\r\n"
+        headers = command + " " + path + " HTTP/1.1" + end
+        headers += "Host: " + hostname + end
+        headers += "Accept: */*" + end
+        headers += "User-Agent: IAmCourtenaysClient1.0" + end
+        if args != None:
+            headers += "Content-Length: " + str(len(args)) + end
+        headers += end
 
-    def get_body(self, data):
-        return None
+        return headers
+
+    def read_response(self, data):
+        code = int(data.split(" ", maxsplit=2)[1])
+        body = data.split("\r\n\r\n")[1]
+        return (code, body)
     
     def sendall(self, data):
         self.socket.sendall(data.encode('utf-8'))
@@ -68,13 +89,34 @@ class HTTPClient(object):
         return buffer.decode('utf-8')
 
     def GET(self, url, args=None):
-        code = 500
-        body = ""
+        (host, port) = self.get_host_port(url)
+        self.connect(host, port)
+        request = self.get_headers("GET", url)
+        print(request)
+        self.sendall(request)
+        returned = self.recvall(self.socket)
+        self.close()
+        print(returned)
+
+        (code, body) = self.read_response(returned)
         return HTTPResponse(code, body)
 
     def POST(self, url, args=None):
-        code = 500
-        body = ""
+        (host, port) = self.get_host_port(url)
+        self.connect(host, port)
+        if args == None:
+            new_args = ""
+        else:
+            new_args = urllib.parse.urlencode(args)
+            print("\n ARGS:" + new_args +"\n")
+        request = self.get_headers("POST", url, new_args) + new_args
+        print(request)
+        self.sendall(request)
+        returned = self.recvall(self.socket)
+        self.close()
+        print(returned)
+
+        (code, body) = self.read_response(returned)
         return HTTPResponse(code, body)
 
     def command(self, url, command="GET", args=None):
